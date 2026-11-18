@@ -1,0 +1,17 @@
+# Villa Oceania (voexuma.com)
+# Deploy with the Netlify CLI from this folder:  netlify deploy --prod
+# Drag-and-drop deploys do NOT include the availability function.
+
+[build]
+  # The website itself (index.html, images, fonts)
+  publish = "site"
+  # Server-side functions (the live VRBO availability feed)
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+[dev]
+  # Local preview with the function:  netlify dev
+  publish = "site"
+  port = 8888
