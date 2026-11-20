@@ -3,30 +3,31 @@
 A static one-page site with a live availability calendar.
 
 - `site/`: the website itself (`index.html`, `images/`, `fonts/`).
-- `netlify/functions/availability.js`: reads the VRBO calendar on the server and returns only the booked dates, never guest names. The page calls it at `/.netlify/functions/availability`.
+- `netlify/functions/availability.js`: reads the VRBO calendar (main) and the Airbnb calendar on the server, merges the booked dates and returns only those dates, never guest names. The page calls it at `/.netlify/functions/availability`.
 - `netlify.toml`: tells Netlify to publish `site/` and to deploy the function.
 
-## Deploy (Netlify CLI)
+The website files sit in `site/` so the function code, which holds the private calendar links, is never published as a public file.
 
-Drag-and-drop deploys do **not** include the function, so the calendar would show "Live availability is temporarily unavailable". Use the CLI from this folder:
+## Deploy (GitHub + Netlify, no Terminal)
 
-```
-npm install -g netlify-cli
-netlify login
-netlify link          # first time only: choose the villaoceania site
-netlify deploy --prod
-```
+1. Create a **private** GitHub repository and upload everything in this folder, keeping the folder structure. GitHub's upload page takes up to 100 files at a time, so upload in two batches (for example, the `site/images` files on their own, uploaded from inside the `site/images` folder on GitHub).
+2. In Netlify, link the project to that repository (Project configuration > Build & deploy > Link repository).
+3. Leave the build command empty and set the publish directory to `site`. Netlify reads `netlify.toml` and deploys the function automatically.
+
+Every change committed to the repository's `main` branch publishes automatically. Don't drag-and-drop deploys into Netlify: they leave out the function, and the calendar falls back to "Live availability is temporarily unavailable".
+
+The Netlify CLI also works from this folder: `netlify deploy --prod`.
 
 After deploying, open `https://<your-site>/.netlify/functions/availability` to check that it returns booked dates.
 
-## Calendar feeds (environment variables)
+## Calendar feeds
 
-Set these in Netlify under **Site settings > Environment variables** (Site configuration > Environment variables in the newer dashboard), then redeploy:
+Both calendar links are built into `availability.js`, so no Netlify setup is needed. To use different links, set these in Netlify under **Project configuration > Environment variables**, then redeploy:
 
-- `VRBO_ICAL_URL`: the VRBO iCal export link. If it isn't set, the function uses the current VRBO link built into `availability.js`.
-- `AIRBNB_ICAL_URL`: optional. When it is set, Airbnb bookings are merged with VRBO.
+- `VRBO_ICAL_URL`: the VRBO iCal export link.
+- `AIRBNB_ICAL_URL`: the Airbnb iCal export link.
 
-If a feed can't be read, the page still loads: every future date stays selectable and guests see a note that live availability is temporarily unavailable.
+If the Airbnb calendar can't be read (for example, if the Airbnb listing is closed), the VRBO dates still show. If the VRBO calendar can't be read, the page still loads: every future date stays selectable and guests see a note that live availability is temporarily unavailable.
 
 ## Change the minimum stay
 
@@ -44,4 +45,4 @@ The "Minimum stay is 5 nights" message updates automatically.
 netlify dev
 ```
 
-This serves the site and the function at http://localhost:8888. `tests/calendar.test.js` runs browser checks against that address (Playwright needs to be installed).
+This serves the site and the function at http://localhost:8888.

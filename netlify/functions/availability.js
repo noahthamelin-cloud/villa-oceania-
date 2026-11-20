@@ -1,14 +1,18 @@
 // Villa Oceania: live availability feed.
-// Reads the VRBO calendar (and an optional Airbnb calendar) on the server and returns
-// only the booked date ranges. Guest names and every other field are dropped here,
-// so they never reach the browser.
+// Reads the VRBO calendar (the main calendar) and the Airbnb calendar on the server and
+// returns only the booked date ranges, merged. Guest names, summaries and every other
+// field are dropped here, so they never reach the browser.
 //
 // Response: { "updated": "<ISO time>", "booked": [ { "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" } ] }
 // "end" is the check-out date, so it is NOT a booked night.
-// On any problem: HTTP 200 with { "booked": [], "error": true } so the page still loads.
+// If the Airbnb calendar can't be read, the VRBO dates are still returned.
+// If the VRBO calendar can't be read: HTTP 200 with { "booked": [], "error": true } so the page still loads.
 
+// Netlify environment variables VRBO_ICAL_URL / AIRBNB_ICAL_URL override these links if set.
 const DEFAULT_VRBO_ICAL_URL =
   'https://www.vrbo.com/icalendar/4d6ded289a214137a435065a0a286d25.ics?nonTentative';
+const DEFAULT_AIRBNB_ICAL_URL =
+  'https://www.airbnb.com/calendar/ical/1553950714042802180.ics?s=e8e75ae13b8b4446dbcf7d70c4e27e47';
 
 const OK_CACHE = 'public, max-age=300, s-maxage=900';
 // Errors are cached briefly so a short VRBO outage clears itself within a minute.
@@ -102,13 +106,28 @@ function mergeRanges(ranges, todayISO) {
 }
 
 exports.handler = async function () {
-  const urls = [process.env.VRBO_ICAL_URL || DEFAULT_VRBO_ICAL_URL];
-  if (process.env.AIRBNB_ICAL_URL) urls.push(process.env.AIRBNB_ICAL_URL);
+  const vrboUrl = process.env.VRBO_ICAL_URL || DEFAULT_VRBO_ICAL_URL;
+  const airbnbUrl = process.env.AIRBNB_ICAL_URL || DEFAULT_AIRBNB_ICAL_URL;
+
+  // Read both calendars at the same time; one failing doesn't stop the other.
+  const [vrbo, airbnb] = await Promise.allSettled([fetchCalendar(vrboUrl), fetchCalendar(airbnbUrl)]);
+
+  if (vrbo.status !== 'fulfilled') {
+    console.error('availability: VRBO calendar failed: ' + (vrbo.reason && vrbo.reason.message ? vrbo.reason.message : vrbo.reason));
+    return json({ booked: [], error: true }, ERROR_CACHE);
+  }
 
   try {
-    const calendars = await Promise.all(urls.map(fetchCalendar));
-    const all = [];
-    for (const text of calendars) all.push(...parseCalendar(text));
+    const all = parseCalendar(vrbo.value);
+    if (airbnb.status === 'fulfilled') {
+      try {
+        all.push(...parseCalendar(airbnb.value));
+      } catch (err) {
+        console.error('availability: Airbnb calendar skipped: ' + (err && err.message ? err.message : err));
+      }
+    } else {
+      console.error('availability: Airbnb calendar skipped: ' + (airbnb.reason && airbnb.reason.message ? airbnb.reason.message : airbnb.reason));
+    }
     const todayISO = new Date().toISOString().slice(0, 10);
     return json({ updated: new Date().toISOString(), booked: mergeRanges(all, todayISO) }, OK_CACHE);
   } catch (err) {
